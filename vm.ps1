@@ -7,6 +7,9 @@ $efiletter = "E"
 $windowsletter = "I"
 $index = 5
 $diskNumber = 2
+$cpuCores = 2
+$ramSize = 4GB
+$networkSwitch = "Default Switch"
 
 Function Show-Output {
     Param([string]$message)
@@ -28,18 +31,20 @@ Function Show-Menu {
     Show-Output "2: Show Windows Version (Index)"
     Show-Output "3: Create VHDX"
     Show-Output "4: Apply Windows Image"
-    Show-Output "5: Unmount Everything"
-    Show-Output "6: Delete VHDX"
-    Show-Output "7: Exit"
-    $choice = Read-Host "Enter your choice (1-7)"
+    Show-Output "5: Create Hyper-V VM"
+    Show-Output "6: Unmount Everything"
+    Show-Output "7: Delete VHDX"
+    Show-Output "8: Exit"
+    $choice = Read-Host "Enter your choice (1-8)"
     Switch ($choice) {
         1 { Check-Disk }
         2 { Show-WindowsVersion }
         3 { Create-VHDX }
         4 { Apply-WindowsImage }
-        5 { Unmount-Everything }
-        6 { Delete-VHDX }
-        7 { Exit }
+        5 { Create-HyperVVM }
+        6 { Unmount-Everything }
+        7 { Delete-VHDX }
+        8 { Exit }
     }
 }
 
@@ -63,7 +68,7 @@ Function Check-Disk {
 
 Function Show-WindowsVersion {
     Try {
-        Show-Output "nChecking available Windows image indexes..."
+        Show-Output "Checking available Windows image indexes..."
         $installFilePath = "${isoLetter}:\sources\install.wim"
         if (-not (Test-Path $installFilePath)) {
             $installFilePath = "${isoLetter}:\sources\install.esd"
@@ -152,6 +157,29 @@ exit
     }
     Catch {
         Show-Output "Error applying Windows image: $_"
+    }
+    Read-Host "Press Enter to return to the menu..."
+    Show-Menu
+}
+
+Function Create-HyperVVM {
+    Try {
+        Show-Output "Creating Hyper-V VM..."
+
+        $vmName = "Windows11VM"
+        $vmMemory = $ramSize
+        $vmProcessorCount = $cpuCores
+        $switchName = $networkSwitch
+        $vmPath = "C:\VMs\$vmName"
+        $vhdxPath = "$vhdxFilePath\$vhdxFileName"
+
+        New-VM -Name $vmName -MemoryStartupBytes $vmMemory -NewVHDPath $vhdxPath -NewVHDSizeBytes ($vhdxSizeGB * 1GB) -Generation 2 -SwitchName $switchName -Path $vmPath
+        Set-VMProcessor $vmName -Count $vmProcessorCount
+
+        Show-Output "Hyper-V VM '$vmName' created successfully."
+    }
+    Catch {
+        Show-Output "Error creating Hyper-V VM: $_"
     }
     Read-Host "Press Enter to return to the menu..."
     Show-Menu
