@@ -1,13 +1,12 @@
-﻿# Konfiguration
-$isoLetter = "G"               # ISO Laufwerksbuchstabe
-$vhdxFileName = "Windows11.vhdx" # Standardname für das VHDX
-$vhdxFilePath = "D:\ALLE programme jetzt hier\Hyper-V"  # Pfad für das VHDX
-$vhdxSizeGB = 128              # Größe des VHDX in GB (Wert als Zahl)
-$efiSizeMB = 512               # EFI-Partition (in MB)
-$efiletter = "Z"               # EFI-Laufwerksbuchstabe
-$windowsletter = "I"           # Ziel-Laufwerksbuchstabe
-$index = 5                     # Standard-Index für install.wim oder install.esd
-$diskNumber = 2                # Standard-Disknummer (kann angepasst werden)
+$isoLetter = "G"
+$vhdxFileName = "Windows11.vhdx"
+$vhdxFilePath = "D:\ALLE programme jetzt hier\Hyper-V"
+$vhdxSizeGB = 128
+$efiSizeMB = 512
+$efiletter = "E"
+$windowsletter = "I"
+$index = 5
+$diskNumber = 2
 
 Function Show-Output {
     Param([string]$message)
@@ -16,14 +15,10 @@ Function Show-Output {
 
 Function Show-Progress {
     Param([int]$percent)
-    
-    # Berechnung der Fortschrittsanzeige
-    $barLength = 50  # Länge der Fortschrittsanzeige in Zeichen
-    $progress = "=" * ($percent / 2)  # Berechne die Anzahl der "=" basierend auf dem Fortschritt
-    $spaces = " " * ($barLength - $progress.Length)  # Berechne die restlichen Leerzeichen
-    
-    # Zeige die Fortschrittsanzeige an
-    Write-Host -NoNewline "`r[$progress$spaces] $percent%"  # Die `r sorgt dafür, dass die Ausgabe überschrieben wird
+    $barLength = 50
+    $progress = "=" * ($percent / 2)
+    $spaces = " " * ($barLength - $progress.Length)
+    Write-Host -NoNewline "r[$progress$spaces] $percent%"
 }
 
 Function Show-Menu {
@@ -48,7 +43,6 @@ Function Show-Menu {
     }
 }
 
-# Option 1: Check Disk
 Function Check-Disk {
     Try {
         Show-Output "Listing available disks..."
@@ -67,10 +61,9 @@ Function Check-Disk {
     Show-Menu
 }
 
-# Option 2: Show Windows Version (Index)
 Function Show-WindowsVersion {
     Try {
-        Show-Output "`nChecking available Windows image indexes..."
+        Show-Output "nChecking available Windows image indexes..."
         $installFilePath = "${isoLetter}:\sources\install.wim"
         if (-not (Test-Path $installFilePath)) {
             $installFilePath = "${isoLetter}:\sources\install.esd"
@@ -90,7 +83,6 @@ Function Show-WindowsVersion {
     Show-Menu
 }
 
-# Option 3: Create VHDX
 Function Create-VHDX {
     Try {
         Show-Output "Creating VHDX file..."
@@ -100,9 +92,7 @@ Function Create-VHDX {
             New-Item -ItemType Directory -Force -Path (Split-Path $vhdxPath -Parent)
         }
         
-        # Berechne die Größe des VHDX in Bytes
         $vhdxSizeBytes = $vhdxSizeGB * 1GB
-
         Show-Output "Creating VHDX with size $vhdxSizeGB GB ($vhdxSizeBytes bytes)..."
         New-VHD -Path $vhdxPath -SizeBytes $vhdxSizeBytes -Dynamic
         Mount-VHD -Path $vhdxPath
@@ -115,7 +105,6 @@ Function Create-VHDX {
     Show-Menu
 }
 
-# Option 4: Apply Windows Image
 Function Apply-WindowsImage {
     Try {
         Show-Output "WARNING: Make sure the correct disk number ($diskNumber) is configured in the script!"
@@ -138,11 +127,9 @@ format fs=ntfs quick
 assign letter=$windowsletter
 exit
 "@
-        # DiskPart-Script ausführen
         $diskpartScript | diskpart
 
         Show-Output "Disk prepared. Applying Windows image..."
-
         $installFilePath = "${isoLetter}:\sources\install.wim"
         if (-not (Test-Path $installFilePath)) {
             $installFilePath = "${isoLetter}:\sources\install.esd"
@@ -153,12 +140,15 @@ exit
         }
 
         Show-Output "Running DISM command..."
-
-        # DISM-Befehl in PowerShell ausführen, ohne neues Fenster zu öffnen
         $dismCommand = "dism /apply-image /imagefile:${isoLetter}:\sources\install.wim /index:$index /applydir:${windowsletter}:\ "
         Invoke-Expression $dismCommand
 
         Show-Output "Windows image applied successfully."
+        
+        $bcdbootCommand = "bcdboot ${windowsletter}:\Windows /s ${efiletter}: /f UEFI"
+        Invoke-Expression $bcdbootCommand
+
+        Show-Output "BCDBoot command executed successfully."
     }
     Catch {
         Show-Output "Error applying Windows image: $_"
@@ -167,25 +157,20 @@ exit
     Show-Menu
 }
 
-# Option 5: Unmount Everything
 Function Unmount-Everything {
     Try {
         Show-Output "Unmounting all drives and partitions..."
-        
-        # Alle VHDX-Disk-Images dismounten
         Dismount-VHD -Path "$vhdxFilePath\$vhdxFileName"
 
-        # Alle gemounteten Laufwerke finden und aushängen
         $allDrives = Get-PSDrive -PSProvider FileSystem | Where-Object { $_.IsNetwork -eq $false }
         
         foreach ($drive in $allDrives) {
-            if ($drive.Name -ne $isoLetter) {  # Den ISO-Laufwerksbuchstaben überspringen
+            if ($drive.Name -ne $isoLetter) {
                 Remove-PSDrive -Name $drive.Name
                 Show-Output "Unmounted drive $($drive.Name):"
             }
         }
-        
-        # Alle Partitionen auf der Festplatte aushängen
+
         $partitions = Get-Partition | Where-Object { $_.DriveLetter }
         foreach ($partition in $partitions) {
             $partitionDriveLetter = $partition.DriveLetter
@@ -193,7 +178,6 @@ Function Unmount-Everything {
             Show-Output "Unmounted partition $partitionDriveLetter"
         }
 
-        # ISO-Image auch unmounten
         $isoDriveLetter = $isoLetter + ":"
         if (Test-Path $isoDriveLetter) {
             Remove-PSDrive -Name $isoLetter
@@ -207,7 +191,6 @@ Function Unmount-Everything {
     Show-Menu
 }
 
-# Option 6: Delete VHDX
 Function Delete-VHDX {
     Try {
         Show-Output "Deleting VHDX file..."
@@ -215,11 +198,10 @@ Function Delete-VHDX {
         Show-Output "VHDX file deleted successfully."
     }
     Catch {
-        Show-Output "Error deleting VHDX file: $_"
+        Show-Output "Error deleting VHDX: $_"
     }
     Read-Host "Press Enter to return to the menu..."
     Show-Menu
 }
 
-# Menü starten
 Show-Menu
