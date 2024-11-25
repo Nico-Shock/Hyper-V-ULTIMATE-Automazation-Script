@@ -1,16 +1,16 @@
-$isoLetter = "F"
+$isoLetter = "E"
 $vhdxFileName = "Windows11.vhdx"
 $vhdxFilePath = "D:\ALLE programme jetzt hier\Hyper-V"
 $vhdxSizeGB = 128
 $efiSizeMB = 512
-$efiletter = "W"
+$efiletter = "U"
 $windowsletter = "I"
 $index = 5
 $diskNumber = 2
 $cpuCores = 2
 $ramSize = 4GB
 $networkSwitch = "Default Switch"
-$vmName = "Windows11VM"
+$vmName = "Windows11"
 
 Function Show-Output {
     Param([string]$message)
@@ -158,6 +158,11 @@ Function Unmount-Everything {
 
 Function Create-HyperVVM {
     Try {
+        $existingVM = Get-VM -Name $vmName -ErrorAction SilentlyContinue
+        if ($existingVM) {
+            Show-Output "Error: A VM with the name '$vmName' already exists. Please rename or delete the existing VM before proceeding."
+            return
+        }
         $vhdxPath = "$vhdxFilePath\$vhdxFileName"
         If (-not (Test-Path $vhdxPath)) {
             Show-Output "Error: VHDX file does not exist at $vhdxPath"
@@ -166,9 +171,11 @@ Function Create-HyperVVM {
         New-VM -Name $vmName -MemoryStartupBytes $ramSize -Generation 2 -SwitchName $networkSwitch -Path $vhdxFilePath
         Add-VMHardDiskDrive -VMName $vmName -Path $vhdxPath
         Set-VMProcessor -VMName $vmName -Count $cpuCores
+        Set-VM -VMName $vmName -AutomaticCheckpointsEnabled $false
+        Set-VMMemory -VMName $vmName -DynamicMemoryEnabled $false
         Start-VM -Name $vmName
         vmconnect localhost $vmName
-        Show-Output "Hyper-V VM created and started successfully."
+        Show-Output "Hyper-V VM created, configured, and started successfully."
     }
     Catch {
         Show-Output "Error creating Hyper-V VM: $_"
