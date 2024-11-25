@@ -3,7 +3,7 @@ $vhdxFileName = "Windows11.vhdx"
 $vhdxFilePath = "D:\ALLE programme jetzt hier\Hyper-V"
 $vhdxSizeGB = 128
 $efiSizeMB = 512
-$efiletter = "Z"
+$efiletter = "W"
 $windowsletter = "I"
 $index = 5
 $diskNumber = 2
@@ -99,7 +99,7 @@ Function Create-VHDX {
         Show-Output "Creating VHDX with size $vhdxSizeGB GB ($vhdxSizeBytes bytes)..."
         New-VHD -Path $vhdxPath -SizeBytes $vhdxSizeBytes -Dynamic
         Mount-VHD -Path $vhdxPath
-        Show-Output "VHDX created successfully."
+        Show-Output "VHDX created and mounted successfully."
     }
     Catch {
         Show-Output "Error creating VHDX: $_"
@@ -158,8 +158,8 @@ Function Unmount-Everything {
     Try {
         Show-Output "Unmounting all drives and partitions..."
         $vhdxPath = "$vhdxFilePath\$vhdxFileName"
-        Unmount-VHDX -Path $vhdxPath
-        Show-Output "Unmounted VHDX."
+        Dismount-VHD -Path $vhdxPath
+        Show-Output "VHDX dismounted."
         $allDrives = Get-PSDrive -PSProvider FileSystem | Where-Object { $_.IsNetwork -eq $false }
         foreach ($drive in $allDrives) {
             if ($drive.Name -ne $isoLetter) {
@@ -198,6 +198,20 @@ Function Create-HyperVVM {
     }
     Catch {
         Show-Output "Error creating Hyper-V VM: $_"
+    }
+    Read-Host "Press Enter to return to the menu..."
+    Show-Menu
+}
+
+Function Delete-VHDX {
+    Try {
+        Show-Output "Deleting VHDX file..."
+        $vhdxPath = "$vhdxFilePath\$vhdxFileName"
+        Remove-Item -Path $vhdxPath -Force
+        Show-Output "VHDX deleted successfully."
+    }
+    Catch {
+        Show-Output "Error deleting VHDX: $_"
     }
     Read-Host "Press Enter to return to the menu..."
     Show-Menu
