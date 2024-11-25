@@ -182,6 +182,14 @@ Function Create-HyperVVM {
         Set-VMProcessor -VMName $vmName -Count $vmProcessorCount
 
         Show-Output "Hyper-V VM '$vmName' created successfully with existing VHDX."
+
+        # Start the VM
+        Start-VM -Name $vmName
+        Show-Output "VM '$vmName' is now starting."
+
+        # Connect to the VM
+        Show-Output "Connecting to the VM '$vmName'..."
+        vmconnect localhost $vmName
     }
     Catch {
         Show-Output "Error creating Hyper-V VM: $_"
@@ -227,8 +235,13 @@ Function Unmount-Everything {
 Function Delete-VHDX {
     Try {
         Show-Output "Deleting VHDX file..."
-        Remove-Item -Path "$vhdxFilePath\$vhdxFileName" -Force
-        Show-Output "VHDX file deleted successfully."
+        $vhdxPath = "$vhdxFilePath\$vhdxFileName"
+        if (Test-Path $vhdxPath) {
+            Remove-Item -Path $vhdxPath
+            Show-Output "VHDX file deleted successfully."
+        } else {
+            Show-Output "VHDX file not found at $vhdxPath."
+        }
     }
     Catch {
         Show-Output "Error deleting VHDX: $_"
