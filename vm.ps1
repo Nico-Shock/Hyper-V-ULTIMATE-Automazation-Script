@@ -17,14 +17,6 @@ Function Show-Output {
     Write-Host "$message"
 }
 
-Function Show-Progress {
-    Param([int]$percent)
-    $barLength = 50
-    $progress = "=" * ($percent / 2)
-    $spaces = " " * ($barLength - $progress.Length)
-    Write-Host -NoNewline "r[$progress$spaces] $percent%"
-}
-
 Function Show-Menu {
     Clear
     Show-Output "Please choose an option:"
@@ -51,12 +43,12 @@ Function Show-Menu {
 
 Function Check-Disk {
     Try {
-        Show-Output "Listing available disks..."
         $disks = Get-Disk | Where-Object { $_.OperationalStatus -eq "OK" }
         If ($disks.Count -eq 0) {
             Show-Output "No disks found or disks are not operational."
         } else {
             $disks | ForEach-Object { Show-Output "Disk $($_.Number): $($_.Model) - $($_.Size / 1GB) GB" }
+            Show-Output "Check disk numbers carefully before selecting a target disk!"
         }
     }
     Catch {
@@ -68,7 +60,6 @@ Function Check-Disk {
 
 Function Show-WindowsVersion {
     Try {
-        Show-Output "Checking available Windows image indexes..."
         $installFilePath = "${isoLetter}:\sources\install.wim"
         if (-not (Test-Path $installFilePath)) {
             $installFilePath = "${isoLetter}:\sources\install.esd"
@@ -77,7 +68,6 @@ Function Show-WindowsVersion {
                 return
             }
         }
-        Show-Output "Using installation file: $installFilePath"
         dism /Get-ImageInfo /ImageFile:$installFilePath | Out-Host
     }
     Catch {
@@ -89,14 +79,11 @@ Function Show-WindowsVersion {
 
 Function Create-VHDX {
     Try {
-        Show-Output "Creating VHDX file..."
         $vhdxPath = "$vhdxFilePath\$vhdxFileName"
         if (-not (Test-Path -Path (Split-Path $vhdxPath -Parent))) {
-            Show-Output "The specified directory does not exist. Creating directory..."
             New-Item -ItemType Directory -Force -Path (Split-Path $vhdxPath -Parent)
         }
         $vhdxSizeBytes = $vhdxSizeGB * 1GB
-        Show-Output "Creating VHDX with size $vhdxSizeGB GB ($vhdxSizeBytes bytes)..."
         New-VHD -Path $vhdxPath -SizeBytes $vhdxSizeBytes -Dynamic
         Mount-VHD -Path $vhdxPath
         Show-Output "VHDX created and mounted successfully."
@@ -109,14 +96,14 @@ Function Create-VHDX {
 }
 
 Function Apply-WindowsImage {
+    Show-Output "Warning: Ensure the disk number $diskNumber is correct before proceeding!"
+    $confirmation = Read-Host "Type 'yes' to continue, or 'no' to cancel"
+    if ($confirmation -ne "yes") {
+        Show-Output "Operation cancelled by user."
+        Show-Menu
+        return
+    }
     Try {
-        Show-Output "WARNING: Make sure the correct disk number ($diskNumber) is configured in the script!"
-        $confirmation = Read-Host "Press Enter to continue or press Ctrl + C to cancel"
-        if ($confirmation -eq "cancel") {
-            Show-Output "Operation canceled."
-            return
-        }
-        Show-Output "Preparing the disk with DiskPart..."
         $diskpartScript = @"
 select disk $diskNumber
 clean
@@ -130,7 +117,6 @@ assign letter=$windowsletter
 exit
 "@
         $diskpartScript | diskpart
-        Show-Output "Disk prepared. Applying Windows image..."
         $installFilePath = "${isoLetter}:\sources\install.wim"
         if (-not (Test-Path $installFilePath)) {
             $installFilePath = "${isoLetter}:\sources\install.esd"
@@ -139,13 +125,9 @@ exit
                 return
             }
         }
-        Show-Output "Running DISM command..."
-        $dismCommand = "dism /apply-image /imagefile:${isoLetter}:\sources\install.wim /index:$index /applydir:${windowsletter}:\ "
-        Invoke-Expression $dismCommand
+        dism /apply-image /imagefile:$installFilePath /index:$index /applydir:${windowsletter}:\
+        bcdboot ${windowsletter}:\Windows /s ${efiletter}: /f UEFI
         Show-Output "Windows image applied successfully."
-        $bcdbootCommand = "bcdboot ${windowsletter}:\Windows /s ${efiletter}: /f UEFI"
-        Invoke-Expression $bcdbootCommand
-        Show-Output "BCDBoot command executed successfully."
     }
     Catch {
         Show-Output "Error applying Windows image: $_"
@@ -156,18 +138,16 @@ exit
 
 Function Unmount-Everything {
     Try {
-        Show-Output "Unmounting all drives and partitions..."
         $vhdxPath = "$vhdxFilePath\$vhdxFileName"
-        Dismount-VHD -Path $vhdxPath
-        Show-Output "VHDX dismounted."
-        $allDrives = Get-PSDrive -PSProvider FileSystem | Where-Object { $_.IsNetwork -eq $false }
-        foreach ($drive in $allDrives) {
-            if ($drive.Name -ne $isoLetter) {
-                Remove-PSDrive -Name $drive.Name -Force
-                Show-Output "Unmounted drive $($drive.Name):"
-            }
+        $mountedVHD = Get-VHD -Path $vhdxPath | Where-Object { $_.Attached -eq $true }
+        if ($mountedVHD) {
+            Dismount-VHD -Path $vhdxPath
         }
-        Show-Output "Unmounting complete."
+        $allDrives = Get-Volume | Where-Object { $_.DriveLetter -notlike $isoLetter }
+        foreach ($drive in $allDrives) {
+            Remove-Partition -DriveLetter $drive.DriveLetter -Force
+        }
+        Show-Output "All drives successfully unmounted."
     }
     Catch {
         Show-Output "Error unmounting drives: $_"
@@ -178,23 +158,17 @@ Function Unmount-Everything {
 
 Function Create-HyperVVM {
     Try {
-        Show-Output "Creating Hyper-V VM with existing VHDX..."
-        $vmMemory = $ramSize
-        $vmProcessorCount = $cpuCores
-        $switchName = $networkSwitch
         $vhdxPath = "$vhdxFilePath\$vhdxFileName"
         If (-not (Test-Path $vhdxPath)) {
             Show-Output "Error: VHDX file does not exist at $vhdxPath"
             return
         }
-        New-VM -Name $vmName -MemoryStartupBytes $vmMemory -Generation 2 -SwitchName $switchName -Path $vhdxFilePath
+        New-VM -Name $vmName -MemoryStartupBytes $ramSize -Generation 2 -SwitchName $networkSwitch -Path $vhdxFilePath
         Add-VMHardDiskDrive -VMName $vmName -Path $vhdxPath
-        Set-VMProcessor -VMName $vmName -Count $vmProcessorCount
-        Show-Output "Hyper-V VM '$vmName' created successfully with existing VHDX."
+        Set-VMProcessor -VMName $vmName -Count $cpuCores
         Start-VM -Name $vmName
-        Show-Output "VM '$vmName' is now starting."
-        Show-Output "Connecting to the VM '$vmName'..."
         vmconnect localhost $vmName
+        Show-Output "Hyper-V VM created and started successfully."
     }
     Catch {
         Show-Output "Error creating Hyper-V VM: $_"
@@ -205,10 +179,9 @@ Function Create-HyperVVM {
 
 Function Delete-VHDX {
     Try {
-        Show-Output "Deleting VHDX file..."
         $vhdxPath = "$vhdxFilePath\$vhdxFileName"
         Remove-Item -Path $vhdxPath -Force
-        Show-Output "VHDX deleted successfully."
+        Show-Output "VHDX file deleted successfully."
     }
     Catch {
         Show-Output "Error deleting VHDX: $_"
