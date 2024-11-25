@@ -158,7 +158,8 @@ Function Unmount-Everything {
     Try {
         Show-Output "Unmounting all drives and partitions..."
         $vhdxPath = "$vhdxFilePath\$vhdxFileName"
-        Dismount-VHD -Path $vhdxPath
+        Unmount-VHDX -Path $vhdxPath
+        Show-Output "Unmounted VHDX."
         $allDrives = Get-PSDrive -PSProvider FileSystem | Where-Object { $_.IsNetwork -eq $false }
         foreach ($drive in $allDrives) {
             if ($drive.Name -ne $isoLetter) {
