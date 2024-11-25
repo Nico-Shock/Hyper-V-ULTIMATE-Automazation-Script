@@ -164,19 +164,24 @@ exit
 
 Function Create-HyperVVM {
     Try {
-        Show-Output "Creating Hyper-V VM..."
+        Show-Output "Creating Hyper-V VM with existing VHDX..."
 
         $vmName = "Windows11VM"
         $vmMemory = $ramSize
         $vmProcessorCount = $cpuCores
         $switchName = $networkSwitch
-        $vmPath = "C:\VMs\$vmName"
         $vhdxPath = "$vhdxFilePath\$vhdxFileName"
 
-        New-VM -Name $vmName -MemoryStartupBytes $vmMemory -NewVHDPath $vhdxPath -NewVHDSizeBytes ($vhdxSizeGB * 1GB) -Generation 2 -SwitchName $switchName -Path $vmPath
-        Set-VMProcessor $vmName -Count $vmProcessorCount
+        If (-not (Test-Path $vhdxPath)) {
+            Show-Output "Error: VHDX file does not exist at $vhdxPath"
+            return
+        }
 
-        Show-Output "Hyper-V VM '$vmName' created successfully."
+        New-VM -Name $vmName -MemoryStartupBytes $vmMemory -Generation 2 -SwitchName $switchName -Path $vhdxFilePath
+        Add-VMHardDiskDrive -VMName $vmName -Path $vhdxPath
+        Set-VMProcessor -VMName $vmName -Count $vmProcessorCount
+
+        Show-Output "Hyper-V VM '$vmName' created successfully with existing VHDX."
     }
     Catch {
         Show-Output "Error creating Hyper-V VM: $_"
